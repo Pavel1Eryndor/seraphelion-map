@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {OrbitControls} from './OrbitControls.js';
+import {data,initLore,openPlace,placeAt,isPlacing} from './lore.js';
 
 const host=document.querySelector('#world'), loading=document.querySelector('#loading');
 let renderer;
@@ -32,9 +33,16 @@ async function build(){const texture=await new THREE.TextureLoader().loadAsync('
  terrain=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({map:texture,roughness:.95,metalness:0}));scene.add(terrain);
  const base=new THREE.Mesh(new THREE.BoxGeometry(W,.28,D),new THREE.MeshStandardMaterial({color:'#655441',roughness:1}));base.position.y=-.16;scene.add(base);
  const ground=new THREE.Mesh(new THREE.PlaneGeometry(180,180),new THREE.MeshBasicMaterial({color:'#101d24'}));ground.rotation.x=-Math.PI/2;ground.position.y=-.34;scene.add(ground);
- for(const [name,u,v] of places){const mesh=new THREE.Mesh(new THREE.SphereGeometry(.065,12,8),new THREE.MeshBasicMaterial({color:0xffdf91}));mesh.position.set((u-.5)*W,0,(v-.5)*D);scene.add(mesh);const label=document.createElement('button');label.className='pin-label';label.textContent=name;label.onclick=()=>{document.querySelector('#detail').hidden=false;document.querySelector('#place-name').textContent=name;};host.appendChild(label);markerItems.push({mesh,label,u,v});}
+ await initLore(syncMarkers);syncMarkers();
  updateHeight();focus();loading.hidden=true;window.__atlas={terrain,heights,renderer,scene,camera,markerItems};
 }
+function syncMarkers(){
+ for(const p of data.locations){let m=markerItems.find(m=>m.id===p.id);if(!m){const mesh=new THREE.Mesh(new THREE.SphereGeometry(.065,12,8),new THREE.MeshBasicMaterial({color:0xffdf91}));const label=document.createElement('button');label.className='pin-label';label.onclick=()=>openPlace(p.id);host.appendChild(label);scene.add(mesh);m={mesh,label,id:p.id};markerItems.push(m);}m.u=p.u;m.v=p.v;m.label.textContent=p.name;m.mesh.visible=document.querySelector('#markers').checked;m.mesh.position.set((p.u-.5)*W,sampleHeight(p.u,p.v)*factor+.13,(p.v-.5)*D);}
+ for(const m of [...markerItems])if(!data.locations.some(p=>p.id===m.id)){scene.remove(m.mesh);m.mesh.geometry.dispose();m.mesh.material.dispose();m.label.remove();markerItems.splice(markerItems.indexOf(m),1);}
+}
+const raycaster=new THREE.Raycaster();let down;
+renderer.domElement.addEventListener('pointerdown',e=>{down=[e.clientX,e.clientY];});
+renderer.domElement.addEventListener('pointerup',e=>{if(!terrain||!isPlacing()||!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>5)return;const rect=renderer.domElement.getBoundingClientRect();raycaster.setFromCamera(new THREE.Vector2((e.clientX-rect.left)/rect.width*2-1,-(e.clientY-rect.top)/rect.height*2+1),camera);const hit=raycaster.intersectObject(terrain)[0];if(hit)placeAt(THREE.MathUtils.clamp(hit.point.x/W+.5,0,1),THREE.MathUtils.clamp(hit.point.z/D+.5,0,1));});
 build().catch(e=>{console.error(e);loading.textContent='Harta nu s-a putut încărca. Deschide site-ul printr-un server local sau GitHub Pages.';});
 const projected=new THREE.Vector3();function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,camera);for(const m of markerItems){projected.copy(m.mesh.position);projected.y+=.1;projected.project(camera);m.label.style.left=((projected.x*.5+.5)*innerWidth)+'px';m.label.style.top=((-projected.y*.5+.5)*innerHeight)+'px';m.label.hidden=!m.mesh.visible||projected.z>1||projected.z< -1;}}animate();
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
